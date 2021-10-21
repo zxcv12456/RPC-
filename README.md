@@ -41,6 +41,7 @@ public class RPCResponse implements Serializable {
 }
 ~~~
 **1.2 建立ServiceProvider类**
+  
 提供的服务对象不止一种，有User和Blog等多对象。用一个创建一个类，用哈希表记录下用到的方法和对应的对象。可在后续知道方法后，通过查询来获得对象，从而真正调用方法。
 ~~~
 public class ServiceProvider {  
@@ -132,4 +133,100 @@ public class UserServiceImpl implements UserService {
   }  
 }
 ~~~
-### 3.在客户端构建netty框架，建立NettyClientHandler类并完成通信
+### 2 构建netty客户端
+**2.1 创建NettyRPCClient类**
+在客户端通过Bootstrap来完成netty客户端的初始化。用一个静态代码块创建一个NioEventLoopGroup线程池，一个Bootstrap实例对象。通过
+Bootstrap进行netty客户端的初始化。  
+netty是异步和事件驱动的，在进行端口连接后会返回channelFuture对象，通过它来查询提交任务的执行状态和最终的结果。向channel中写队列并刷新，后等待监听端口关闭。
+在定义channel时，就自带了一个跟hashmap类似的AttributeMap的属性。调用的结果Response可通过给channel设置别名返回。
+
+~~~
+public class NettyRPCClient implements RPCClient {  
+    private static final Bootstrap bootstrap;  
+ private static final EventLoopGroup eventLoopGroup;  
+ private String host;  
+ private int port;  
+ public NettyRPCClient(String host, int port) {  
+        this.host = host;  
+ this.port = port;  
+  }  
+    // netty客户端初始化，重复使用  
+  static {  
+        eventLoopGroup = new NioEventLoopGroup();  
+  bootstrap = new Bootstrap();  
+  bootstrap.group(eventLoopGroup).channel(NioSocketChannel.class)  
+                .handler(new NettyClientInitializer());  
+  }  
+  
+    /**  
+ * 这里需要操作一下，因为netty的传输都是异步的，你发送request，会立刻返回一个值， 而不是想要的相应的response  
+ */  @Override  
+  public RPCResponse sendRequest(RPCRequest request) {  
+        try {  
+            ChannelFuture channelFuture  = bootstrap.connect(host, port).sync();  
+  Channel channel = channelFuture.channel();  
+  // 发送数据  
+  channel.writeAndFlush(request);  
+  channel.closeFuture().sync();  
+  // 阻塞的获得结果，通过给channel设计别名，获取特定名字下的channel中的内容（这个在hanlder中设置）  
+  // AttributeKey是，线程隔离的，不会由线程安全问题。  
+  // 实际上不应通过阻塞，可通过回调函数  
+  AttributeKey<RPCResponse> key = AttributeKey.valueOf("RPCResponse");  
+  RPCResponse response = channel.attr(key).get();  
+  
+  System.out.println(response);  
+ return response;  
+  } catch (InterruptedException e) {  
+            e.printStackTrace();  
+  }  
+        return null;  
+  }  
+}
+~~~
+**2.2 创建客户端的ChannelInitializer类**
+每个channel都有一个对应的唯一的ChannelPipeline对象。它是一个Handler的集合。它负责处理和拦截 inbound 或者 outbound 的事件和操作，相当于一个贯穿netty的链。ChannelInitializer类中有initChannel方法可自定义的在ChannelPipeline中添加事件和操作。
+在TCP传输过程中会出现粘包或者分包的情况。通过netty自带的LengthFieldBasedFrameDecoder类解码和LengthFieldPrepender类
+编码,让生成的数据包先添加一个长度字段，传输后会会按照参数指定的包长度偏移量数据对接收到的数据进行解码。
+再添加ObjectEncoder与ObjectDecoder类，使用的是java的序列化方式。在Pipeline中，channel会根据为in操作还是out操作，来使得从头到尾或者从尾到头行使不同的方法。
+在ChannelPipeline中添加一个NettyClientHandler类。
+~~~
+public class NettyClientInitializer extends ChannelInitializer<SocketChannel> {  
+    @Override  
+  protected void initChannel(SocketChannel ch) throws Exception {  
+        ChannelPipeline pipeline = ch.pipeline();  
+  // 消息格式 [长度][消息体]  
+  pipeline.addLast(new LengthFieldBasedFrameDecoder(Integer.MAX_VALUE,0,4,0,4));  
+  // 计算当前待大宋消息的长度，写入到前4个字节中  
+  pipeline.addLast(new LengthFieldPrepender(4));  
+  pipeline.addLast(new ObjectEncoder());  
+  
+  pipeline.addLast(new ObjectDecoder(new ClassResolver() {  
+            @Override  
+  public Class<?> resolve(String className) throws ClassNotFoundException {  
+                return Class.forName(className);  
+  }  
+        }));  
+  
+  pipeline.addLast(new NettyClientHandler());  
+  }  
+}
+~~~
+**2.3 创建netty客户端具体的handler**
+它继承于SimpleChannelInboundHandler接口，用于接收对端传输过来的消息，对其通过不同的方法进行操作。我们重写了其中的channelRead0方法，在接收数据后，用channel的AttributeMap属性添加Response对象。
+~~~
+public class NettyClientHandler extends SimpleChannelInboundHandler<RPCResponse> {  
+    @Override  
+  protected void channelRead0(ChannelHandlerContext ctx, RPCResponse msg) throws Exception {  
+        // 接收到response, 给channel设计别名，让sendRequest里读取response  
+  AttributeKey<RPCResponse> key = AttributeKey.valueOf("RPCResponse");  
+  ctx.channel().attr(key).set(msg);  
+  ctx.channel().close();  
+  }  
+  
+    @Override  
+  public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {  
+        cause.printStackTrace();  
+  ctx.close();  
+  }  
+}
+~~~
