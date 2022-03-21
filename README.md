@@ -55,7 +55,7 @@ RPC框架能实现远程调用，使得分布式或者微服务系统中不同�
 ### 定义消息格式和实体对象
 **1.定义Request类与Response类**
 
-定义Request类和Response类，这些定义都要继承Serializable接口。目的是为了实现传输途中的序列化和反序列化。其中Request包含服务类名、方法名、参数列表和参数类型。
+定义Request类和Response类，这些定义都要继承Serializable接口。目的是为了实现传输途中的序列化和反序列化。其中Request包含服务类名、方法名、参数列表和参数类型。  
 要采用Json方式序列化时，会出现当一个类定义了某个类型的父类作为成员变量，实际存放的为某个子类型，反序列化后，属性丢失的情况。
 所以我们需要在Request类和Response类中都添加一个参数类型paramsTypes和返回对象类型dataType的类成员变量，以保证反序列化的顺利完成。
 ~~~
@@ -88,8 +88,8 @@ public class RPCResponse implements Serializable {
 ~~~
 ### RPC客户端模块
 ### 完成RPC客户端、动态代理和Netty客户端、服务发现功能
-**1.创建主客户端**
-TestClient类，先创建一个netty客户端，使得Netty客户端开始启动。再创建一个代理客户端，动态代理想调用服务端的哪个类，再生成一个实例代理对象，然后完成调用。
+**1.创建主客户端**                                                                                                        
+   TestClient类，先创建一个netty客户端，使得Netty客户端开始启动。再创建一个代理客户端，动态代理想调用服务端的哪个类，再生成一个实例代理对象，然后完成调用。
 ~~~
 public class TestClient {  
     public static void main(String[] args) {  
@@ -117,7 +117,7 @@ public class TestClient {
   }  
 }
 ~~~
-**2.创建RPC动态代理类**
+**2.创建RPC动态代理类**  
 RPCClientProxy类，客户端实现动态代理，但不是要真的行使服务端方法，而是在invoke方法里通过反射把要调用的服务名、方法名、与查找的参数等信息，封装成request类，并开始调用Netty中的sendRequest方法，使得Netty开始传输request请求，从而返回response对象。
 ~~~
 public class RPCClientProxy implements InvocationHandler {  
@@ -141,9 +141,9 @@ public class RPCClientProxy implements InvocationHandler {
   }  
 }
 ~~~
-**3.创建Netty客户端**
-在客户端通过Bootstrap来完成netty客户端的初始化。用一个静态代码块创建一个NioEventLoopGroup线程池，一个Bootstrap实例对象。通过Bootstrap进行netty客户端的初始化。 
-此类中定义一个ServiceRegister类的属性，且在类的构造函数中实例化serviceRegister。先通过zookeeper注册中心中服务发现功能，得到IP地址和端口号。
+**3.创建Netty客户端**    
+在客户端通过Bootstrap来完成netty客户端的初始化。用一个静态代码块创建一个NioEventLoopGroup线程池，一个Bootstrap实例对象。通过Bootstrap进行netty客户端的初始化。   
+此类中定义一个ServiceRegister类的属性，且在类的构造函数中实例化serviceRegister。先通过zookeeper注册中心中服务发现功能，得到IP地址和端口号。  
 netty是异步和事件驱动的，得到端口并进行端口连接后会返回channelFuture对象，通过它来查询提交任务的执行状态和最终的结果。向channel中写队列并刷新，后等待监听端口关闭。  
 在定义channel时，就自带了一个跟hashmap类似的AttributeMap的属性。调用的结果Response通过给channel设置别名返回。
 ~~~
@@ -191,7 +191,7 @@ public class NettyRPCClient implements RPCClient {
   }  
 }
 ~~~
-**4.创建Netty客户端的ChannelInitializer类**
+**4.创建Netty客户端的ChannelInitializer类**  
 每个channel都有一个对应的唯一的ChannelPipeline对象。它是一个Handler的集合。它负责处理和拦截 inbound 或者 outbound 的事件和操作，相当于一个贯穿netty的责任链。ChannelInitializer类中有initChannel方法可自定义的在ChannelPipeline中添加事件和操作。  
 在TCP传输过程中会出现粘包或者分包的情况。通过自定义传输协议，添加一个MyEncode类编码器和一个MyDecode类解码器，让生成的数据包先进行补充，其中就添加了传输消息的长度和使用的序列化方式，传输后会按照消息中的传输长度和序列化方式对接收的消息进行解码。
 在Pipeline中，channel会根据为in操作还是out操作，来使得从头到尾或者从尾到头行使不同的方法。  
@@ -209,7 +209,7 @@ public class NettyClientInitializer extends ChannelInitializer<SocketChannel> {
   }  
 }
 ~~~
-**5.创建Netty客户具体的Handler**
+**5.创建Netty客户具体的Handler**  
 它继承于SimpleChannelInboundHandler接口，用于接收对端传输过来的消息，对其通过不同的方法进行操作。我们重写了其中的channelRead0方法，在接收数据后，用channel的AttributeMap属性添加Response对象。
 ~~~
 public class NettyClientHandler extends SimpleChannelInboundHandler<RPCResponse> {  
@@ -230,7 +230,7 @@ public class NettyClientHandler extends SimpleChannelInboundHandler<RPCResponse>
 ~~~
 ### RPC服务端模块
 ### 完成RPC服务端和Netty服务端、反射、服务注册功能
-**1.创建RPC主服务端**
+**1.创建RPC主服务端**  
 创建一个ServiceProvider类，把服务端服务对象的接口和对象一一对应起来，并且输入IP地址和端口。创建Netty服务端并开启端口，使得Netty服务端运行起来。
 ~~~
 public class TestServer {  
@@ -246,8 +246,8 @@ public class TestServer {
   }  
 }
 ~~~
-**2.创建ServiceProvider类**
-提供的服务对象不止一种，有User和Blog等多对象，且得把服务使用的IP地址和端口号注册到注册中心上完成服务注册功能。
+**2.创建ServiceProvider类**  
+提供的服务对象不止一种，有User和Blog等多对象，且得把服务使用的IP地址和端口号注册到注册中心上完成服务注册功能。  
 创建一个类，其中属性中有host属性和port属性。在构造方法里面创建一个哈希表和一个ZkServiceRegister类。用哈希表记录下用到的方法和对应的对象，可在后续知道方法后，通过查询来获得对象，从而真正调用方法。其中也调用了ZkServiceRegister的register方法，完成了服务注册功能。
 ~~~
 public class ServiceProvider {  
@@ -285,7 +285,7 @@ public class ServiceProvider {
   }  
 }
 ~~~
-**3.创建Netty服务端**
+**3.创建Netty服务端**  
 在服务端用serverBootstrap来完成netty服务端的初始化。创建两个NioEventLoopGroup线程池。一个bossGroup负责建立与客户端的连接。一个workGroup负责与客户端的读写操作。跟netty客户端一样，建立连接并监听。
 ~~~
 public class NettyRPCServer implements RPCServer {  
@@ -319,7 +319,7 @@ public class NettyRPCServer implements RPCServer {
     }  
 }
 ~~~
-**4.创建Netty服务端的channelInitializer类**
+**4.创建Netty服务端的channelInitializer类**  
 在设置类时多设置一个属性 ServiceProvider类。用于传递记录着接口与对应的对象的消息。其他的和Netty客户端的channelInitializer的设计一致
 ~~~
 public class NettyServerInitializer extends ChannelInitializer<SocketChannel> {  
@@ -335,7 +335,7 @@ public class NettyServerInitializer extends ChannelInitializer<SocketChannel> {
   }  
 }
 ~~~
-**5.创建Netty服务端具体的Handler**
+**5.创建Netty服务端具体的Handler**  
 它继承于SimpleChannelInboundHandler接口，同客户端一样重写channelRead0方法。在接收到request对象时调用channelRead0方法。
 其中的getResponse方法，通过接口名查询serviceProvider，得到对应的服务类。通过反射得到对应方法并使用方法，从而查询数据库返回response对象。
 ~~~
@@ -377,7 +377,7 @@ public class NettyRPCServerHandler extends SimpleChannelInboundHandler<RPCReques
 }
 ~~~
 ### 后台服务数据模块
-### 模拟从数据库查询或者插入的环节
+### 模拟从数据库查询或者插入的环节  
 UserServiceImpl等类
 ~~~
 public class UserServiceImpl implements UserService {  
@@ -403,10 +403,10 @@ public class UserServiceImpl implements UserService {
 ~~~
 ### 自定义通信协议与自定义序列化方式模块
 ### 完成编码类和解码类和自定义序列化方式
-**1.自定义JSON序列化方式**
-JSON 是一种轻量级的数据交换语言，该语言以易于让人阅读的文字为基础，用来传输由属性值或者序列性的值组成的数据对象，类似 xml，Json 比 xml更小、更快更容易解析。JSON 由于采用字符方式存储，占用相对于字节方式较大，并且序列化后类的信息会丢失，可能导致反序列化失败，所以我们这里额外的操作使得反序列化得已成功。
-原因分析:一个类定义了某个类型的父类作为成员变量，实际存放的为某个子类型， JSON 反序列化后，属性丢失的情况。因为在序列化之前类成员变量，定义的类型为父类，实际存放的为子类的信息，里面有着子类的特有属性。在反序列化时根据父类进行还原，就会出现属性丢失的情况。
-解决办法：加入标记，在Request类和Response类中都添加两个标记，参数类型paramsTypes和返回对象类型dataType的类成员变量。在反序列化的时候，先判断是否为它本身类型，不是就通过标记进行还原。
+**1.自定义JSON序列化方式**  
+JSON 是一种轻量级的数据交换语言，该语言以易于让人阅读的文字为基础，用来传输由属性值或者序列性的值组成的数据对象，类似 xml，Json 比 xml更小、更快更容易解析。JSON 由于采用字符方式存储，占用相对于字节方式较大，并且序列化后类的信息会丢失，可能导致反序列化失败，所以我们这里额外的操作使得反序列化得已成功。  
+原因分析:一个类定义了某个类型的父类作为成员变量，实际存放的为某个子类型， JSON 反序列化后，属性丢失的情况。因为在序列化之前类成员变量，定义的类型为父类，实际存放的为子类的信息，里面有着子类的特有属性。在反序列化时根据父类进行还原，就会出现属性丢失的情况。  
+解决办法：加入标记，在Request类和Response类中都添加两个标记，参数类型paramsTypes和返回对象类型dataType的类成员变量。在反序列化的时候，先判断是否为它本身类型，不是就通过标记进行还原。  
 使用fastjson进行解析和生成，通过之前的自定义传输协议的传输类型进行不同的反序列化。
 ~~~
 public class JsonSerializer implements Serializer {  
@@ -461,7 +461,7 @@ public class JsonSerializer implements Serializer {
   }  
 }
 ~~~
-**2.java原生序列化方式**
+**2.java原生序列化方式**  
 使用ByteArrayOutputStream等字节数组输出、输入流类，作用是在内存中创建一个字节数组缓冲区，所有发送到输出、输入流的数据保存在该字节数组缓冲区中，然后读取数据。根据是序列化还是反序列化来进行不同的操作。
 ~~~
 public class ObjectSerializer implements Serializer {  
@@ -508,8 +508,8 @@ public class ObjectSerializer implements Serializer {
   }  
 }
 ~~~
-**3.自定义通信协议，完成编码类**
-该自定义编码类继承于MessageToByteEncoder类。MessageToByteEncoder类是netty编码的抽象类，其实现了channelRead方法，而我们只要实现其encode方法即可。在它的属性上，需要有一个serialize器，负责将传入的对象序列化成字节数组。
+**3.自定义通信协议，完成编码类**  
+该自定义编码类继承于MessageToByteEncoder类。MessageToByteEncoder类是netty编码的抽象类，其实现了channelRead方法，而我们只要实现其encode方法即可。在它的属性上，需要有一个serialize器，负责将传入的对象序列化成字节数组。  
 根据我们之前自定义的通信协议的方式，先根据类型输入消息类型，在所要传输ByteBuf字节数据上写入序列化方式、传输信息的字节长度和通过序列化方法得到的序列化字节数组。
 ~~~
 public class MyEncode extends MessageToByteEncoder {  
@@ -535,8 +535,8 @@ public class MyEncode extends MessageToByteEncoder {
   }  
 }
 ~~~
-**3.自定义通信协议，完成解码类**
-跟编码类一样，继承；继承来自netty解码抽象类的ByteToMessageDecoder类。
+**3.自定义通信协议，完成解码类**  
+跟编码类一样，继承；继承来自netty解码抽象类的ByteToMessageDecoder类。  
 先读取一个2字节的消息类型，再读取一个2字节的序列化类型，根据序列化器中的getSerializerByCode方法得到一个序列化器实例。再读取4个字节的数据字节长度，根据长度创建并输入消息。通过实例序列化对象调用方法，反序列化返回对象。
 ~~~
 public class MyDecode extends ByteToMessageDecoder {  
@@ -569,9 +569,9 @@ public class MyDecode extends ByteToMessageDecoder {
 ~~~
 ### 注册中心模块
 ### 完成注册中心的设置，实现服务注册与服务发现功能
-**1.设置注册中心，完成zookeeper客户端的设置，实现注册中心的功能**
-先建立zookeeper的客户端Curator。Curator是Zookeeper开源的客户端框架。将根节点设置为MyRPC，参数sessionTimeoutMs来设定会话的超时时间。建立完成后，开启客户端。
-服务注册功能：通过给zookeeper添加子节点来实现。在过去ServiceProvider类中的方法中，将服务提供者的服务名和所在地址作为参数传入了过来。客户端将服务名设置成永久节点，把地址设为临时节点。服务下线时，就会只删除地址，不删除服务名。先检查客户端没有该服务名就添加，调用getServiceAddress方法，获得地址并作为临时节点添加。
+**1.设置注册中心，完成zookeeper客户端的设置，实现注册中心的功能**  
+先建立zookeeper的客户端Curator。Curator是Zookeeper开源的客户端框架。将根节点设置为MyRPC，参数sessionTimeoutMs来设定会话的超时时间。建立完成后，开启客户端。  
+服务注册功能：通过给zookeeper添加子节点来实现。在过去ServiceProvider类中的方法中，将服务提供者的服务名和所在地址作为参数传入了过来。客户端将服务名设置成永久节点，把地址设为临时节点。服务下线时，就会只删除地址，不删除服务名。先检查客户端没有该服务名就添加，调用getServiceAddress方法，获得地址并作为临时节点添加。  
 服务发现功能：通过客户端的getChildren方法获得，服务名的所有子节点，也就是地址。在这个几个地址中，通过选择不同负载均衡算法，来选择得到的地址。通过parseAddress方法创建将地址转化为InetSocketAddress类，最后返回。RPC客户端在NettyRPCClient中调用注册中心的serviceDiscovery方法得到地址。
 
 ~~~
@@ -641,7 +641,7 @@ public class ZkServiceRegister implements ServiceRegister {
 ~~~
 ### 负载均衡模块
 ###  完成多个负载均衡算法
-**1.随机负载均衡算法**
+**1.随机负载均衡算法**  
 使用random函数，随机生成数，实现随机负载均衡算法。
 ~~~
 public class RandomLoadBalance implements LoadBalance{  
@@ -655,8 +655,9 @@ public class RandomLoadBalance implements LoadBalance{
   }  
 }
 ~~~
-**1.轮询负载均衡算法**
+**1.轮询负载均衡算法**  
 通过除余得到结果，实现轮询负载均衡算法
+~~~
 public class RoundLoadBalance implements LoadBalance{  
     private int choose = -1;  
   @Override  
@@ -666,4 +667,4 @@ public class RoundLoadBalance implements LoadBalance{
  return addressList.get(choose);  
   }  
 }
-
+~~~
