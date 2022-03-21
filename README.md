@@ -535,7 +535,7 @@ public class MyEncode extends MessageToByteEncoder {
   }  
 }
 ~~~
-**3.自定义通信协议，完成解码类**  
+**4.自定义通信协议，完成解码类**  
 跟编码类一样，继承；继承来自netty解码抽象类的ByteToMessageDecoder类。  
 先读取一个2字节的消息类型，再读取一个2字节的序列化类型，根据序列化器中的getSerializerByCode方法得到一个序列化器实例。再读取4个字节的数据字节长度，根据长度创建并输入消息。通过实例序列化对象调用方法，反序列化返回对象。
 ~~~
@@ -655,7 +655,7 @@ public class RandomLoadBalance implements LoadBalance{
   }  
 }
 ~~~
-**1.轮询负载均衡算法**  
+**2.轮询负载均衡算法**  
 通过除余得到结果，实现轮询负载均衡算法
 ~~~
 public class RoundLoadBalance implements LoadBalance{  
