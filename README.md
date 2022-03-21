@@ -4,7 +4,8 @@ My-RPC是一款基于Zookeeper实现的RPC框架。网络传输基于Netty实现
 RPC远程过程调用，它是一个通过网络从远处计算机程序上请求服务，而不需要了解底层网络技术的协议。比如两个不同的服务 A、B 部署在两台不同的机器上，服务 A 如果想要调用服务 B 中的某个方法该怎么办呢？使用 HTTP请求就可以，但是可能会比较慢而且一些优化做的并不好。而RPC框架就是为了解决这个问题。
 RPC框架能实现远程调用，使得分布式或者微服务系统中不同服务之间的调用像本地调用一样简单。
 ## 架构
-
+![$120C~1F6HR0QQT(` R%PAL](https://user-images.githubusercontent.com/78541558/159341951-2cc43a52-fbce-4361-bb6f-78c0632fcdbe.jpg)
+                                                    完整RPC架构图
 ## 特性
 
  - 实现了基于Netty传输的网络传输方式
@@ -30,7 +31,7 @@ RPC框架能实现远程调用，使得分布式或者微服务系统中不同�
 | ------ | ------ | ------ |
 | 序列化后的Data | 序列化后的Data | 序列化后的Data |
 
-
+自定义传输协议的字段和对应的解释
 | 字段 | 解释 |
 | ------ | ------ |
 |消息类型| 标明是请求quest还是响应sponse | 
@@ -41,14 +42,14 @@ RPC框架能实现远程调用，使得分布式或者微服务系统中不同�
 ![U5ZQ@A $(VN$8T $)N77~~G](https://user-images.githubusercontent.com/78541558/157439744-bac21e27-a3bb-4c31-8104-302b8477f5b9.png)
 ![OFUUA(ZY (M8SET4RJG46HO](https://user-images.githubusercontent.com/78541558/157439758-bd5f5c1a-4d7c-4851-b26c-677691612e0d.png)
 ## 设计思路
-1.要想服务端可以进行多方法调用，需要把Request抽象。
-2.要想返回值支持多种对象，需要把Response抽象。  
-3.要想加快调用速度，需要在Netty高性能网络框架上进行通信。
-4.要解决粘包或者分包问题，需要自定义传输协议。
-5.要加快序列化速度，需要自定义序列化方式。
-6.要完成服务的注册与发现，要设置注册中心
-7.要分散服务提供者的压力，要完成负载均衡功能
-一个完整的RPC框架就逐步完成了
+1.要想服务端可以进行多方法调用，需要把Request抽象。                                      
+2.要想返回值支持多种对象，需要把Response抽象。                                          
+3.要想加快调用速度，需要在Netty高性能网络框架上进行通信。                                
+4.要解决粘包或者分包问题，需要自定义传输协议。                                           
+5.要加快序列化速度，需要自定义序列化方式。                                              
+6.要完成服务的注册与发现，要设置注册中心                                               
+7.要分散服务提供者的压力，要完成负载均衡功能                                          
+一个完整的RPC框架就逐步完成了                                                       
 ## 代码原理分析
 ### 公共模块
 ### 定义消息格式和实体对象
@@ -461,7 +462,7 @@ public class JsonSerializer implements Serializer {
 }
 ~~~
 **2.java原生序列化方式**
-
+使用ByteArrayOutputStream等字节数组输出、输入流类，作用是在内存中创建一个字节数组缓冲区，所有发送到输出、输入流的数据保存在该字节数组缓冲区中，然后读取数据。根据是序列化还是反序列化来进行不同的操作。
 ~~~
 public class ObjectSerializer implements Serializer {  
   
@@ -507,3 +508,162 @@ public class ObjectSerializer implements Serializer {
   }  
 }
 ~~~
+**3.自定义通信协议，完成编码类**
+该自定义编码类继承于MessageToByteEncoder类。MessageToByteEncoder类是netty编码的抽象类，其实现了channelRead方法，而我们只要实现其encode方法即可。在它的属性上，需要有一个serialize器，负责将传入的对象序列化成字节数组。
+根据我们之前自定义的通信协议的方式，先根据类型输入消息类型，在所要传输ByteBuf字节数据上写入序列化方式、传输信息的字节长度和通过序列化方法得到的序列化字节数组。
+~~~
+public class MyEncode extends MessageToByteEncoder {  
+    private Serializer serializer;  
+  
+  @Override  
+  protected void encode(ChannelHandlerContext ctx, Object msg, ByteBuf out) throws Exception {  
+        // 写入消息类型  
+  if(msg instanceof RPCRequest){  
+            out.writeShort(MessageType.REQUEST.getCode());  
+  }  
+        else if(msg instanceof RPCResponse){  
+            out.writeShort(MessageType.RESPONSE.getCode());  
+  }  
+        // 写入序列化方式  
+  out.writeShort(serializer.getType());  
+  // 得到序列化数组  
+  byte[] serialize = serializer.serialize(msg);  
+  // 写入长度  
+  out.writeInt(serialize.length);  
+  // 写入序列化字节数组  
+  out.writeBytes(serialize);  
+  }  
+}
+~~~
+**3.自定义通信协议，完成解码类**
+跟编码类一样，继承；继承来自netty解码抽象类的ByteToMessageDecoder类。
+先读取一个2字节的消息类型，再读取一个2字节的序列化类型，根据序列化器中的getSerializerByCode方法得到一个序列化器实例。再读取4个字节的数据字节长度，根据长度创建并输入消息。通过实例序列化对象调用方法，反序列化返回对象。
+~~~
+public class MyDecode extends ByteToMessageDecoder {  
+  
+  
+    @Override  
+  protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {  
+        // 1. 读取消息类型  
+  short messageType = in.readShort();  
+  // 现在还只支持request与response请求  
+  if(messageType != MessageType.REQUEST.getCode() &&  
+                messageType != MessageType.RESPONSE.getCode()){  
+            System.out.println("暂不支持此种数据");  
+ return;  }  
+        // 2. 读取序列化的类型  
+  short serializerType = in.readShort();  
+  // 根据类型得到相应的序列化器  
+  Serializer serializer = Serializer.getSerializerByCode(serializerType);  
+ if(serializer == null)throw new RuntimeException("不存在对应的序列化器");  
+  // 3. 读取数据序列化后的字节长度  
+  int length = in.readInt();  
+  // 4. 读取序列化数组  
+  byte[] bytes = new byte[length];  
+  in.readBytes(bytes);  
+  // 用对应的序列化器解码字节数组  
+  Object deserialize = serializer.deserialize(bytes, messageType);  
+  out.add(deserialize);  
+  }  
+}
+~~~
+### 注册中心模块
+### 完成注册中心的设置，实现服务注册与服务发现功能
+**1.设置注册中心，完成zookeeper客户端的设置，实现注册中心的功能**
+先建立zookeeper的客户端Curator。Curator是Zookeeper开源的客户端框架。将根节点设置为MyRPC，参数sessionTimeoutMs来设定会话的超时时间。建立完成后，开启客户端。
+服务注册功能：通过给zookeeper添加子节点来实现。在过去ServiceProvider类中的方法中，将服务提供者的服务名和所在地址作为参数传入了过来。客户端将服务名设置成永久节点，把地址设为临时节点。服务下线时，就会只删除地址，不删除服务名。先检查客户端没有该服务名就添加，调用getServiceAddress方法，获得地址并作为临时节点添加。
+服务发现功能：通过客户端的getChildren方法获得，服务名的所有子节点，也就是地址。在这个几个地址中，通过选择不同负载均衡算法，来选择得到的地址。通过parseAddress方法创建将地址转化为InetSocketAddress类，最后返回。RPC客户端在NettyRPCClient中调用注册中心的serviceDiscovery方法得到地址。
+
+~~~
+public class ZkServiceRegister implements ServiceRegister {  
+    // curator 提供的zookeeper客户端  
+  private CuratorFramework client;  
+  // zookeeper根路径节点  
+  private static final String ROOT_PATH = "MyRPC";  
+  // 初始化负载均衡器， 这里用的是随机， 一般通过构造函数传入  
+  private LoadBalance loadBalance = new RandomLoadBalance();  
+  
+  // 这里负责zookeeper客户端的初始化，并与zookeeper服务端建立连接  
+  public ZkServiceRegister(){  
+        // 指数时间重试  
+  RetryPolicy policy = new ExponentialBackoffRetry(1000, 3);  
+  // zookeeper的地址固定，不管是服务提供者还是，消费者都要与之建立连接  
+  // sessionTimeoutMs 与 zoo.cfg中的tickTime 有关系，  
+  // zk还会根据minSessionTimeout与maxSessionTimeout两个参数重新调整最后的超时值。默认分别为tickTime 的2倍和20倍  
+  // 使用心跳监听状态  
+  this.client = CuratorFrameworkFactory.builder().connectString("127.0.0.1:2181")  
+                .sessionTimeoutMs(40000).retryPolicy(policy).namespace(ROOT_PATH).build();  
+ this.client.start();  
+  System.out.println("zookeeper 连接成功");  
+  }  
+  
+    @Override  
+  public void register(String serviceName, InetSocketAddress serverAddress){  
+        try {  
+            // serviceName创建成永久节点，服务提供者下线时，不删服务名，只删地址  
+  if(client.checkExists().forPath("/" + serviceName) == null){  
+                client.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath("/" + serviceName);  
+  }  
+            // 路径地址，一个/代表一个节点  
+  String path = "/" + serviceName +"/"+ getServiceAddress(serverAddress);  
+  // 临时节点，服务器下线就删除节点  
+  client.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath(path);  
+  } catch (Exception e) {  
+            System.out.println("此服务已存在");  
+  }  
+    }  
+    // 根据服务名返回地址,服务发现  
+  @Override  
+  public InetSocketAddress serviceDiscovery(String serviceName) {  
+        try {  
+            List<String> strings = client.getChildren().forPath("/" + serviceName);  
+  // 负载均衡选择器，选择一个  
+  String string = loadBalance.balance(strings);  
+ return parseAddress(string);  
+  } catch (Exception e) {  
+            e.printStackTrace();  
+  }  
+        return null;  
+  }  
+  
+    // 地址 -> XXX.XXX.XXX.XXX:port 字符串  
+  private String getServiceAddress(InetSocketAddress serverAddress) {  
+        return serverAddress.getHostName() +  
+                ":" +  
+                serverAddress.getPort();  
+  }  
+    // 字符串解析为地址  
+  private InetSocketAddress parseAddress(String address) {  
+        String[] result = address.split(":");  
+ return new InetSocketAddress(result[0], Integer.parseInt(result[1]));  
+  }  
+}
+~~~
+### 负载均衡模块
+###  完成多个负载均衡算法
+**1.随机负载均衡算法**
+使用random函数，随机生成数，实现随机负载均衡算法。
+~~~
+public class RandomLoadBalance implements LoadBalance{  
+    @Override  
+  public String balance(List<String> addressList) {  
+  
+        Random random = new Random();  
+ int choose = random.nextInt(addressList.size());  
+  System.out.println("负载均衡选择了" + choose + "服务器");  
+ return addressList.get(choose);  
+  }  
+}
+~~~
+**1.轮询负载均衡算法**
+通过除余得到结果，实现轮询负载均衡算法
+public class RoundLoadBalance implements LoadBalance{  
+    private int choose = -1;  
+  @Override  
+  public String balance(List<String> addressList) {  
+        choose++;  
+  choose = choose%addressList.size();  
+ return addressList.get(choose);  
+  }  
+}
+
